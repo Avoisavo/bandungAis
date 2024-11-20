@@ -1,77 +1,93 @@
-from sentence_transformers import SentenceTransformer, util
-from transformers import pipeline
 import os
 from PyPDF2 import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 import streamlit as st
+import google.generativeai as genai
 from langchain.vectorstores import FAISS
-import faiss 
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.chains.question_answering import load_qa_chain
+from langchain.prompts import PromptTemplate
 from dotenv import load_dotenv
-import numpy as np  # NumPy for handling arrays
 
 load_dotenv()
+os.getenv("GOOGLE_API_KEY")
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-# Initialize BERT embeddings and QA pipeline
-bert_model = SentenceTransformer('all-MiniLM-L6-v2')  # Pretrained BERT model for embeddings
-qa_pipeline = pipeline("question-answering", model="deepset/bert-base-cased-squad2")
+# read all pdf files and return text
 
-# Read all PDF files and return text
+
 def get_pdf_text(pdf_docs):
     text = ""
     for pdf in pdf_docs:
         pdf_reader = PdfReader(pdf)
         for page in pdf_reader.pages:
-            if page.extract_text():
-                text += page.extract_text()
+            text += page.extract_text()
     return text
 
-# Split text into chunks
+# split text into chunks
+
+
 def get_text_chunks(text):
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=10000, chunk_overlap=1000)
     chunks = splitter.split_text(text)
     return chunks  # list of strings
 
+# get embeddings for each chunk
+
+
 def get_vector_store(chunks):
-    # Generate embeddings for each chunk
-    embeddings = [bert_model.encode(chunk) for chunk in chunks]
-
-    # Convert embeddings into a NumPy array
-    embedding_array = np.array(embeddings)
-
-    # Create FAISS index
-    index = faiss.IndexFlatL2(embedding_array.shape[1])  # L2 distance index
-    index.add(embedding_array)  # Add embeddings to the FAISS index
-
-    # Create a mapping of document IDs to their chunks
-    documents = {str(i): chunk for i, chunk in enumerate(chunks)}
-    docstore = InMemoryDocstore(documents)
-
-    # Save FAISS index with LangChain
-    vector_store = FAISS(embedding_array, docstore, index)
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/embedding-001")  # type: ignore
+    vector_store = FAISS.from_texts(chunks, embedding=embeddings)
     vector_store.save_local("faiss_index")
 
-# Retrieve similar documents and generate QA response
+
+def get_conversational_chain():
+    prompt_template = """
+    Answer the question as detailed as possible from the provided context, make sure to provide all the details, if the answer is not in
+    provided context just say, "answer is not available in the context", don't provide the wrong answer\n\n
+    Context:\n {context}?\n
+    Question: \n{question}\n
+
+    Answer:
+    """
+
+    model = ChatGoogleGenerativeAI(model="gemini-pro",
+                                   client=genai,
+                                   temperature=0.3,
+                                   )
+    prompt = PromptTemplate(template=prompt_template,
+                            input_variables=["context", "question"])
+    chain = load_qa_chain(llm=model, chain_type="stuff", prompt=prompt)
+    return chain
+
+
+def clear_chat_history():
+    st.session_state.messages = [
+        {"role": "assistant", "content": "upload some pdfs and ask me a question"}]
+
+
 def user_input(user_question):
-    # Load FAISS index and associated document store
-    vector_store = FAISS.load_local("faiss_index")
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/embedding-001")  # type: ignore
 
-    # Perform similarity search
-    docs = vector_store.similarity_search(user_question)
+    new_db = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True) 
+    docs = new_db.similarity_search(user_question)
 
-    # Use the BERT QA pipeline to answer the question from the most relevant document
-    if docs:
-        context = docs[0].page_content  # Take the most relevant document
-        response = qa_pipeline(question=user_question, context=context)
-        return response['answer']
-    else:
-        return "Answer is not available in the context."
+    chain = get_conversational_chain()
+
+    response = chain(
+        {"input_documents": docs, "question": user_question}, return_only_outputs=True, )
+
+    print(response)
+    return response
 
 
-# Main Streamlit app
 def main():
     st.set_page_config(
-        page_title="BERT PDF Chatbot",
+        page_title="Gemini PDF Chatbot",
         page_icon="🤖"
     )
 
@@ -83,24 +99,21 @@ def main():
         if st.button("Submit & Process"):
             with st.spinner("Processing..."):
                 raw_text = get_pdf_text(pdf_docs)
-                if not raw_text.strip():
-                    st.error("No text could be extracted from the uploaded PDFs. Please try again with a different file.")
-                    return
                 text_chunks = get_text_chunks(raw_text)
-                if not text_chunks:
-                    st.error("No valid text chunks were created. Please check the PDF formatting.")
-                    return
                 get_vector_store(text_chunks)
-                st.success("Processing complete! You can now ask questions.")
+                st.success("Done")
 
     # Main content area for displaying chat messages
-    st.title("Chat with PDF files using BERT🤖")
+    st.title("Chat with PDF files using Gemini🤖")
     st.write("Welcome to the chat!")
-    st.sidebar.button('Clear Chat History', on_click=lambda: st.session_state.clear())
+    st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
+
+    # Chat input
+    # Placeholder for chat messages
 
     if "messages" not in st.session_state.keys():
         st.session_state.messages = [
-            {"role": "assistant", "content": "Upload some PDFs and ask me a question."}]
+            {"role": "assistant", "content": "upload some pdfs and ask me a question"}]
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -111,13 +124,20 @@ def main():
         with st.chat_message("user"):
             st.write(prompt)
 
-        # Display chat messages and bot response
-        if st.session_state.messages[-1]["role"] != "assistant":
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    response = user_input(prompt)
-                    st.write(response)
-            st.session_state.messages.append({"role": "assistant", "content": response})
+    # Display chat messages and bot response
+    if st.session_state.messages[-1]["role"] != "assistant":
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                response = user_input(prompt)
+                placeholder = st.empty()
+                full_response = ''
+                for item in response['output_text']:
+                    full_response += item
+                    placeholder.markdown(full_response)
+                placeholder.markdown(full_response)
+        if response is not None:
+            message = {"role": "assistant", "content": full_response}
+            st.session_state.messages.append(message)
 
 
 if __name__ == "__main__":
