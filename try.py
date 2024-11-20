@@ -31,16 +31,15 @@ def get_text_chunks(text):
     return chunks  # list of strings
 
 # Get embeddings for each chunk and store in FAISS
+# Get embeddings for each chunk and store in FAISS
 def get_vector_store(chunks):
     # Generate embeddings for each chunk
     embeddings = [bert_model.encode(chunk) for chunk in chunks]
-
-    # Pair chunks with their embeddings
-    text_embedding_pairs = list(zip(chunks, embeddings))
     
-    # Use FAISS to store the embeddings
-    vector_store = FAISS.from_embeddings(text_embedding_pairs)
+    # Use FAISS to store the embeddings and chunks
+    vector_store = FAISS.from_texts(texts=chunks, embedding=embeddings)
     vector_store.save_local("faiss_index")
+
 
 # Retrieve similar documents and generate QA response
 def user_input(user_question):
