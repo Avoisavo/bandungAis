@@ -7,6 +7,7 @@ import streamlit as st
 from langchain.vectorstores import FAISS
 import faiss 
 from dotenv import load_dotenv
+import numpy as np  # NumPy for handling arrays
 
 load_dotenv()
 
@@ -34,23 +35,28 @@ def get_text_chunks(text):
 def get_vector_store(chunks):
     # Generate embeddings for each chunk
     embeddings = [bert_model.encode(chunk) for chunk in chunks]
-    
+
     # Convert embeddings into a NumPy array
-    import numpy as np
     embedding_array = np.array(embeddings)
-    
+
     # Create FAISS index
     index = faiss.IndexFlatL2(embedding_array.shape[1])  # L2 distance index
     index.add(embedding_array)  # Add embeddings to the FAISS index
 
-    # Save FAISS index with LangChain
-    vector_store = FAISS(embedding_array, chunks, index)
-    vector_store.save_local("faiss_index")
+    # Create a mapping of document IDs to their chunks
+    documents = {str(i): chunk for i, chunk in enumerate(chunks)}
+    docstore = InMemoryDocstore(documents)
 
+    # Save FAISS index with LangChain
+    vector_store = FAISS(embedding_array, docstore, index)
+    vector_store.save_local("faiss_index")
 
 # Retrieve similar documents and generate QA response
 def user_input(user_question):
+    # Load FAISS index and associated document store
     vector_store = FAISS.load_local("faiss_index")
+
+    # Perform similarity search
     docs = vector_store.similarity_search(user_question)
 
     # Use the BERT QA pipeline to answer the question from the most relevant document
@@ -60,6 +66,7 @@ def user_input(user_question):
         return response['answer']
     else:
         return "Answer is not available in the context."
+
 
 # Main Streamlit app
 def main():
