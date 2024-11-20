@@ -5,6 +5,7 @@ from PyPDF2 import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import streamlit as st
 from langchain.vectorstores import FAISS
+import faiss 
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,14 +31,20 @@ def get_text_chunks(text):
     chunks = splitter.split_text(text)
     return chunks  # list of strings
 
-# Get embeddings for each chunk and store in FAISS
-# Get embeddings for each chunk and store in FAISS
 def get_vector_store(chunks):
     # Generate embeddings for each chunk
     embeddings = [bert_model.encode(chunk) for chunk in chunks]
     
-    # Use FAISS to store the embeddings and chunks
-    vector_store = FAISS.from_texts(texts=chunks, embedding=embeddings)
+    # Convert embeddings into a NumPy array
+    import numpy as np
+    embedding_array = np.array(embeddings)
+    
+    # Create FAISS index
+    index = faiss.IndexFlatL2(embedding_array.shape[1])  # L2 distance index
+    index.add(embedding_array)  # Add embeddings to the FAISS index
+
+    # Save FAISS index with LangChain
+    vector_store = FAISS(embedding_array, chunks, index)
     vector_store.save_local("faiss_index")
 
 
