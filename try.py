@@ -19,7 +19,8 @@ def get_pdf_text(pdf_docs):
     for pdf in pdf_docs:
         pdf_reader = PdfReader(pdf)
         for page in pdf_reader.pages:
-            text += page.extract_text()
+            if page.extract_text():
+                text += page.extract_text()
     return text
 
 # Split text into chunks
@@ -29,10 +30,16 @@ def get_text_chunks(text):
     chunks = splitter.split_text(text)
     return chunks  # list of strings
 
-# Get embeddings for each chunk
+# Get embeddings for each chunk and store in FAISS
 def get_vector_store(chunks):
+    # Generate embeddings for each chunk
     embeddings = [bert_model.encode(chunk) for chunk in chunks]
-    vector_store = FAISS.from_embeddings(embeddings, chunks)
+
+    # Pair chunks with their embeddings
+    text_embedding_pairs = list(zip(chunks, embeddings))
+    
+    # Use FAISS to store the embeddings
+    vector_store = FAISS.from_embeddings(text_embedding_pairs)
     vector_store.save_local("faiss_index")
 
 # Retrieve similar documents and generate QA response
@@ -63,9 +70,15 @@ def main():
         if st.button("Submit & Process"):
             with st.spinner("Processing..."):
                 raw_text = get_pdf_text(pdf_docs)
+                if not raw_text.strip():
+                    st.error("No text could be extracted from the uploaded PDFs. Please try again with a different file.")
+                    return
                 text_chunks = get_text_chunks(raw_text)
+                if not text_chunks:
+                    st.error("No valid text chunks were created. Please check the PDF formatting.")
+                    return
                 get_vector_store(text_chunks)
-                st.success("Done")
+                st.success("Processing complete! You can now ask questions.")
 
     # Main content area for displaying chat messages
     st.title("Chat with PDF files using BERT🤖")
