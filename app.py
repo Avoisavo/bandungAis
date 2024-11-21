@@ -27,11 +27,17 @@ def get_text_chunks(text):
 
 # Generate embeddings and create vector store
 def get_vector_store(chunks):
-    from openai.embeddings_utils import get_embedding
+    embeddings = []
+    for chunk in chunks:
+        response = openai.Embedding.create(
+            input=chunk,
+            model="text-embedding-ada-002"
+        )
+        embeddings.append(response['data'][0]['embedding'])
 
-    embeddings = [get_embedding(chunk, engine="text-embedding-ada-002") for chunk in chunks]
+    # Create and save FAISS vector store
     vector_store = FAISS.from_embeddings(embeddings, chunks)
-    vector_store.save_local("faiss_index")
+    vector_store.save_local("faiss_index"
 
 # Load conversational chain (using OpenAI GPT model)
 def get_conversational_chain(question, context):
