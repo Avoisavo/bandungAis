@@ -1,9 +1,13 @@
 streamlit
-google-generativeai
 python-dotenv
 langchain
 PyPDF2
 chromadb
 faiss-cpu
-langchain_google_genai
 langchain-community
+openai
+python-dotenv
+pdfminer
+pdfminer.six
+bs4
+transformers
