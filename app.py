@@ -30,7 +30,7 @@ def get_vector_store(chunks):
     embeddings = []
     for chunk in chunks:
         response = openai.Embedding.create(
-            input=chunk,
+            input=[chunk],  # Input must be a list
             model="text-embedding-ada-002"
         )
         embeddings.append(response['data'][0]['embedding'])
