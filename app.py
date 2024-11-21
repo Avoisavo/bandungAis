@@ -37,7 +37,7 @@ def get_vector_store(chunks):
 
     # Create and save FAISS vector store
     vector_store = FAISS.from_embeddings(embeddings, chunks)
-    vector_store.save_local("faiss_index"
+    vector_store.save_local("faiss_index")
 
 # Load conversational chain (using OpenAI GPT model)
 def get_conversational_chain(question, context):
